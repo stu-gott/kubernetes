@@ -102,6 +102,65 @@ func TestThirdPartyDelete(t *testing.T) {
 	DoTestInstallThirdPartyAPIDelete(t, client, clientConfig)
 }
 
+func TestThirdPartyDeleteNamespace(t *testing.T) {
+	group := "company.com"
+	version := "v1"
+	_, s := framework.RunAMaster(framework.NewIntegrationTestMasterConfig())
+	defer s.Close()
+
+	ns := framework.CreateTestingNamespace("testdeletion", s, t)
+	defer framework.DeleteTestingNamespace(ns, s, t)
+
+	clientConfig := &restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{NegotiatedSerializer: api.Codecs}}
+	client := clientset.NewForConfigOrDie(clientConfig)
+
+	// Create a TPR
+	deleteFoo := installThirdParty(t, client, clientConfig,
+		&extensions.ThirdPartyResource{
+			ObjectMeta: metav1.ObjectMeta{Name: "foo.company.com"},
+			Versions:   []extensions.APIVersion{{Name: version}},
+		}, group, version, "foos",
+	)
+	defer deleteFoo()
+
+	// Prove that foo objects exist
+	resources, err := client.Discovery().ServerResourcesForGroupVersion("company.com/" + version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resources.APIResources) != 1 {
+		t.Fatalf("Expected exactly the resource \"foos\" in group version %v/%v via discovery, got: %v", group, version, resources.APIResources)
+	}
+
+	// delete and re-add the namespace.
+	framework.DeleteTestingNamespace(ns, s, t)
+
+	// FIXME: this always times out. ServerResourcesForGroupVersion waits for some time to
+	// retrieve resources, so each iteration will take the entire timeout duration
+	err = wait.Poll(2*time.Second, time.Duration(60)*time.Second,
+		func() (bool, error) {
+			client2 := clientset.NewForConfigOrDie(clientConfig)
+			resources, err := client2.Discovery().ServerResourcesForGroupVersion("company.com/" + version)
+			return (err != nil), nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.Discovery().ServerResourcesForGroupVersion("company.com/" + version)
+	if err == nil {
+		t.Fatal("resource in deleted namespace should not exist")
+	}
+	ns = framework.CreateTestingNamespace("client", s, t)
+	defer framework.DeleteTestingNamespace(ns, s, t)
+
+	// get TPR's -- should not exist
+	_, err = client.Discovery().ServerResourcesForGroupVersion("company.com/" + version)
+	if err == nil {
+		t.Fatal("resource in re-created namespace should not exist")
+	}
+}
+
 func TestThirdPartyMultiple(t *testing.T) {
 	_, s := framework.RunAMaster(framework.NewIntegrationTestMasterConfig())
 	defer s.Close()

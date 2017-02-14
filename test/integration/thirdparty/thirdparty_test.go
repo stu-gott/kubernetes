@@ -135,18 +135,6 @@ func TestThirdPartyDeleteNamespace(t *testing.T) {
 	// delete and re-add the namespace.
 	framework.DeleteTestingNamespace(ns, s, t)
 
-	// FIXME: this always times out. ServerResourcesForGroupVersion waits for some time to
-	// retrieve resources, so each iteration will take the entire timeout duration
-	err = wait.Poll(2*time.Second, time.Duration(60)*time.Second,
-		func() (bool, error) {
-			client2 := clientset.NewForConfigOrDie(clientConfig)
-			resources, err := client2.Discovery().ServerResourcesForGroupVersion("company.com/" + version)
-			return (err != nil), nil
-		})
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	_, err = client.Discovery().ServerResourcesForGroupVersion("company.com/" + version)
 	if err == nil {
 		t.Fatal("resource in deleted namespace should not exist")
